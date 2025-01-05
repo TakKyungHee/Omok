@@ -1,56 +1,59 @@
 import omokenv
-from omok import DQN, select_action
+import omok
 import os
 import torch
+from itertools import count
 
-env = omokenv.Omokenv()
-n_observations, n_actions = 100, 100
 
-# GPU를 사용할 경우
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-policy_net_1p, policy_net_2p = DQN(n_observations, n_actions).to(
-    device), DQN(n_observations, n_actions).to(device)
-if 'model_1p.pth' in os.listdir('./'):
-    policy_net_1p.load_state_dict(
-        torch.load('model_1p.pth', map_location=device))
-    print('loaded_1p')
-if 'model_2p.pth' in os.listdir('./'):
-    policy_net_2p.load_state_dict(
-        torch.load('model_2p.pth', map_location=device))
-    print('loaded_2p')
-
-state_1p = env.reset()
-state_1p = torch.tensor(state_1p, dtype=torch.float32,
-                        device=device).view(-1).unsqueeze(0)
-while True:
-    # player 1
-    action_1p = tuple(
-        [int(i) for i in (input('(x, y) 형태로 입력하세요')) if i.isnumeric()])
-    observation_1p, reward_1p, terminated = env.step(action_1p)
-    action_1p = torch.tensor(
-        [[action_1p[0]*9+action_1p[1]]], device=device)
-    # 다음 상태로 이동
-    next_state_2p = torch.tensor(
-        observation_1p, dtype=torch.float32, device=device).view(-1).unsqueeze(0)
-    state_2p = next_state_2p
-    env.render()
-    if terminated:
-        next_state_1p = None
-        break
-
-    else:
-        # player 2
-        action_2p = select_action(state_2p, policy_net_2p)
-        observation_2p, reward_2p, terminated = env.step(action_2p)
-        action_2p = torch.tensor(
-            [[action_2p[0]*9+action_2p[1]]], device=device)
+def play(loc=None):
+    global done, states
+    if not done:
+        player = 1-env.turn % 2  # player 1 -> 0, player 2 -> 1
+        # player는 턴의 홀짝으로 구분
+        if playables[player] == True:
+            if loc == None or len(loc) != 2 or env.board[loc[1]][loc[0]] != 0:
+                return
+            else:
+                action = loc
+        else:
+            action = omok.select_action(
+                states[player], policys[player], eval=True)
+        observation, reward, terminated = env.step(action)
         # 다음 상태로 이동
-        next_state_1p = torch.tensor(
-            observation_2p, dtype=torch.float32, device=device).view(-1).unsqueeze(0)
-    # 메모리에 변이 저장
-    state_1p = next_state_1p
-    env.render()
-    if terminated:
-        next_state_2p = None
-        break
+        player = 1-env.turn % 2
+        next_state = None if terminated else torch.tensor(
+            observation, dtype=torch.float32, device=omok.device).view(-1).unsqueeze(0)
+        states[player] = next_state
+        if terminated:  # player 승리
+            done = True
+            print(f'Game Over, player {2-player%2} win!')
+        env.render()
+        if not done and playables[player] == False:
+            play()
+
+
+env = omok.env
+
+save_states = []  # 상호 참조 방지
+
+policys = [omok.policy_net_1p.eval(), omok.policy_net_2p]
+
+if len(save_states) > 0:
+    state_1p, state_2p = save_states[0], save_states[1]
+else:
+    state_1p, state_2p = env.reset(), env.reset()
+state_1p, state_2p = torch.tensor(state_1p, dtype=torch.float32,
+                                  device=omok.device).view(-1).unsqueeze(0), torch.tensor(state_2p, dtype=torch.float32,
+                                                                                          device=omok.device).view(-1).unsqueeze(0)
+states = [state_1p, state_2p]
+
+# playables = [True, False]
+playables = [False, True]
+
+done = False
+
+if __name__ == '__main__':
+    play()
+    save_states.append(state_1p)
+    save_states.append(state_2p)
+    omokenv.tk.mainloop()
