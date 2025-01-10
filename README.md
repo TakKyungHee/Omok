@@ -1,3 +1,4 @@
+# OMOK
 Omok(오목) game with another player or AI agents. You can even train AI agents by making them compete with each other.
 I implemented the AI through Deep Q-Learing.
 omok.py file is training file.
